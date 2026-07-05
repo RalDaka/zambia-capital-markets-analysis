@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kakuleta Dashboard Launcher</title>
+  <style>
+    :root {
+      --bg: #0f141b;
+      --panel: #151b23;
+      --panel-hover: #1c2530;
+      --ink: #e6edf3;
+      --muted: #9aa8b5;
+      --line: #2a3441;
+      --green: #74d99f;
+      --red: #ff8b8b;
+      --grey: #6b7a8a;
+      --blue: #6ea8ff;
+      --shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 1100px;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    .header h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+
+    .header p {
+      color: var(--muted);
+      font-size: 0.95rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .refresh-btn {
+      background: var(--panel);
+      color: var(--ink);
+      border: 1px solid var(--line);
+      padding: 0.6rem 1.5rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .refresh-btn:hover {
+      background: var(--panel-hover);
+      border-color: var(--blue);
+    }
+
+    .refresh-btn:active {
+      transform: scale(0.97);
+    }
+
+    .last-checked {
+      color: var(--muted);
+      font-size: 0.8rem;
+      margin-top: 0.5rem;
+    }
+
+    /* Card Grid */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+    }
+
+    .card:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow);
+      border-color: rgba(110, 168, 255, 0.3);
+    }
+
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+
+    .card-desc {
+      color: var(--muted);
+      font-size: 0.85rem;
+      line-height: 1.5;
+      margin-bottom: 1rem;
+      flex: 1;
+    }
+
+    /* Status */
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+
+    .status-dot.green { background: var(--green); box-shadow: 0 0 6px rgba(116, 217, 159, 0.4); }
+    .status-dot.red   { background: var(--red);   box-shadow: 0 0 6px rgba(255, 139, 139, 0.4); }
+    .status-dot.grey  { background: var(--grey);  box-shadow: 0 0 6px rgba(107, 122, 138, 0.3); }
+
+    .status-text {
+      color: var(--muted);
+    }
+
+    .status-text.running     { color: var(--green); }
+    .status-text.not-running { color: var(--red); }
+    .status-text.checking    { color: var(--grey); }
+
+    /* Open Button */
+    .open-btn {
+      background: transparent;
+      color: var(--blue);
+      border: 1px solid var(--blue);
+      padding: 0.55rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .open-btn:hover {
+      background: var(--blue);
+      color: #fff;
+    }
+
+    .open-btn:active {
+      transform: scale(0.97);
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.75rem;
+      margin-top: 2.5rem;
+      border-top: 1px solid var(--line);
+      padding-top: 1.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📊 Kakuleta Dashboard Launcher</h1>
+      <p>Control center for all your dashboards</p>
+      <button class="refresh-btn" id="refreshBtn">⟳ Refresh Status</button>
+      <div class="last-checked" id="lastChecked">Last checked: —</div>
+    </div>
+
+    <div class="cards" id="cardsContainer">
+      <!-- Cards injected by JavaScript -->
+    </div>
+
+    <div class="footer">
+      Kakuleta Automation &mdash; Dashboard Launcher
+    </div>
+  </div>
+
+  <script>
+    const dashboards = [
+      {
+        id: 'bond',
+        title: 'Bond Dashboard',
+        desc: 'BoZ Bond Operations — manage invitations, yields, and bond analysis stages.',
+        url: 'http://localhost:3002',
+        checkUrl: 'http://localhost:3002/api/overview',
+      },
+      {
+        id: 'tbill',
+        title: 'T-Bill Dashboard',
+        desc: 'T-Bill Operations — manage treasury bill invitations, yields, and analysis stages.',
+        url: 'http://localhost:3003',
+        checkUrl: 'http://localhost:3003/api/overview',
+      },
+      {
+        id: 'luse',
+        title: 'LuSE Dashboard',
+        desc: 'LuSE Daily Ingestion — manage stock market data ingestion and index tracking.',
+        url: 'http://localhost:3004',
+        checkUrl: 'http://localhost:3004/api/latest-values',
+      },
+      {
+        id: 'forex',
+        title: 'Forex Dashboard',
+        desc: 'Daily BoZ forex rates, Firebase review/edit, historic prices, and analytics.',
+        url: 'http://localhost:3005',
+        checkUrl: 'http://localhost:3005/api/overview',
+      },
+      {
+        id: 'subscription',
+        title: 'Subscription Audit',
+        desc: 'Find & fix users stuck on "paid" after subscription expired (58 flagged).',
+        url: 'http://localhost:5544',
+        checkUrl: 'http://localhost:5544/',
+      },
+    ];
+
+    const statusMap = {};
+    let checkInterval = null;
+
+    function renderCards() {
+      const container = document.getElementById('cardsContainer');
+      container.innerHTML = '';
+
+      dashboards.forEach((db) => {
+        const status = statusMap[db.id] || { state: 'checking', label: 'Checking...' };
+
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.id = `card-${db.id}`;
+
+        card.innerHTML = `
+          <div class="card-title">${db.title}</div>
+          <div class="card-desc">${db.desc}</div>
+          <div class="status">
+            <span class="status-dot ${status.state}"></span>
+            <span class="status-text ${status.state}">${status.label}</span>
+          </div>
+          <a class="open-btn" href="${db.url}" target="_blank" rel="noopener noreferrer">
+            Open Dashboard
+          </a>
+        `;
+
+        container.appendChild(card);
+      });
+    }
+
+    function updateCardStatus(id, state, label) {
+      statusMap[id] = { state, label };
+
+      const card = document.getElementById(`card-${id}`);
+      if (!card) return;
+
+      const dot = card.querySelector('.status-dot');
+      const text = card.querySelector('.status-text');
+
+      dot.className = `status-dot ${state}`;
+      text.className = `status-text ${state}`;
+      text.textContent = label;
+    }
+
+    async function checkDashboard(db) {
+      updateCardStatus(db.id, 'checking', 'Checking...');
+
+      try {
+        const response = await fetch(db.checkUrl, { method: 'GET', mode: 'no-cors' });
+        // If mode is 'no-cors', we get an opaque response (status 0) on success
+        // If we can use regular mode, check status ok
+        if (response.type === 'opaque' || response.ok) {
+          updateCardStatus(db.id, 'green', '🟢 Running');
+        } else {
+          updateCardStatus(db.id, 'red', '🔴 Not running');
+        }
+      } catch {
+        updateCardStatus(db.id, 'red', '🔴 Not running');
+      }
+    }
+
+    async function checkAllDashboards() {
+      const promises = dashboards.map((db) => checkDashboard(db));
+      await Promise.allSettled(promises);
+
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString();
+      document.getElementById('lastChecked').textContent = `Last checked: ${timeStr}`;
+    }
+
+    function startAutoRefresh() {
+      if (checkInterval) clearInterval(checkInterval);
+      checkInterval = setInterval(checkAllDashboards, 5000);
+    }
+
+    // Initialise
+    dashboards.forEach((db) => {
+      statusMap[db.id] = { state: 'checking', label: 'Checking...' };
+    });
+    renderCards();
+
+    // Run first check immediately
+    checkAllDashboards();
+    startAutoRefresh();
+
+    // Manual refresh
+    document.getElementById('refreshBtn').addEventListener('click', () => {
+      checkAllDashboards();
+    });
+  </script>
+</body>
+</html>

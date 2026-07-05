@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LuSE Daily Ingestion Dashboard</title>
+
+  <style>
+    :root {
+      --bg: #0f141b;
+      --panel: #151b23;
+      --panel-soft: #111820;
+      --ink: #e6edf3;
+      --muted: #9aa8b5;
+      --line: #2a3441;
+      --header: #0b1118;
+      --blue: #6ea8ff;
+      --green: #74d99f;
+      --amber: #f0b86a;
+      --red: #ff8b8b;
+      --shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    .app-header {
+      background: var(--header);
+      color: #ffffff;
+      padding: 22px 28px;
+    }
+
+    .app-header h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .app-header p {
+      margin: 0;
+      color: #d6dee8;
+      font-size: 14px;
+    }
+
+    main {
+      padding: 22px 28px 34px;
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: minmax(180px, 220px) minmax(220px, 1fr) minmax(190px, auto) auto;
+      gap: 14px;
+      align-items: end;
+      margin-bottom: 18px;
+    }
+
+    .field label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: none;
+    }
+
+    .check-row input {
+      width: 16px;
+      min-height: 16px;
+      padding: 0;
+    }
+
+    input,
+    select {
+      width: 100%;
+      min-height: 38px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #0f151d;
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    input:focus,
+    select:focus {
+      border-color: var(--blue);
+      outline: 2px solid rgba(37, 99, 235, 0.16);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    button {
+      min-height: 38px;
+      padding: 9px 14px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    button.primary {
+      background: #1f5fbf;
+      color: #ffffff;
+    }
+
+    button.success {
+      background: #197348;
+      color: #ffffff;
+    }
+
+    button.secondary {
+      background: #111820;
+      border-color: var(--line);
+      color: var(--ink);
+    }
+
+    button.warning {
+      background: #2a1d0e;
+      border-color: #7a4b16;
+      color: var(--amber);
+    }
+
+    button:hover {
+      filter: brightness(0.97);
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .notice {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(160px, 1fr));
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .notice div {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: var(--shadow);
+    }
+
+    .notice span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+
+    .notice strong {
+      display: block;
+      font-size: 15px;
+    }
+
+    .notice .good {
+      color: var(--green);
+    }
+
+    .notice .hold {
+      color: var(--amber);
+    }
+
+    .notice .bad {
+      color: var(--red);
+    }
+
+    .ingest-status {
+      display: none;
+      margin-bottom: 18px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .ingest-status.working {
+      display: block;
+      border-color: #2b63a3;
+      color: var(--blue);
+      background: #101d2c;
+    }
+
+    .ingest-status.done {
+      display: block;
+      border-color: #26734c;
+      color: var(--green);
+      background: #102219;
+    }
+
+    .ingest-status.error {
+      display: block;
+      border-color: #7a2f2f;
+      color: var(--red);
+      background: #2a1212;
+    }
+
+    .ingest-status.warning {
+      display: block;
+      border-color: #7a4b16;
+      color: var(--amber);
+      background: #2a1d0e;
+    }
+
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: var(--shadow);
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .metric strong {
+      font-size: 22px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    table {
+      width: 100%;
+      min-width: 1080px;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 11px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--header);
+      color: #ffffff;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    tbody tr:nth-child(even) {
+      background: #111820;
+    }
+
+    tbody tr.edited {
+      background: #102219;
+    }
+
+    tbody tr.warning-row {
+      background: #2a1d0e;
+    }
+
+    .company {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 230px;
+    }
+
+    .company img {
+      width: 38px;
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      object-fit: contain;
+      background: #0f151d;
+    }
+
+    .company b {
+      display: block;
+      font-size: 14px;
+    }
+
+    .company small {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .number {
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .date-note {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .change {
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .change.up {
+      color: var(--green);
+    }
+
+    .change.down {
+      color: var(--red);
+    }
+
+    .change.flat {
+      color: var(--muted);
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      min-width: 92px;
+      justify-content: center;
+      border-radius: 999px;
+      padding: 5px 8px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .status.edited {
+      background: #10311f;
+      color: var(--green);
+    }
+
+    .status.ready {
+      background: #10233b;
+      color: var(--blue);
+    }
+
+    .status.missing {
+      background: #351818;
+      color: var(--red);
+    }
+
+    .status.unchanged {
+      background: #202a35;
+      color: var(--muted);
+    }
+
+    .review {
+      display: grid;
+      grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr);
+      gap: 16px;
+      margin-top: 18px;
+    }
+
+    .module {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      margin-bottom: 18px;
+      padding: 16px;
+    }
+
+    .module-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .module-head h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .module-head p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .index-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(120px, 1fr));
+      gap: 10px;
+    }
+
+    .index-grid .field input {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .index-context {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(160px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .index-context div {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: var(--panel-soft);
+    }
+
+    .index-context span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+    }
+
+    .index-context strong {
+      font-size: 16px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 16px;
+    }
+
+    .panel ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    pre {
+      max-height: 260px;
+      overflow: auto;
+      margin: 0;
+      padding: 12px;
+      border-radius: 6px;
+      background: #111827;
+      color: #d1d5db;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 180px;
+      resize: vertical;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font: 13px/1.5 Arial, Helvetica, sans-serif;
+      color: var(--ink);
+      background: #0f151d;
+    }
+
+    .facebook-grid {
+      display: grid;
+      grid-template-columns: minmax(280px, 420px) minmax(280px, 1fr);
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .facebook-grid textarea {
+      min-height: 150px;
+    }
+
+    .manual-correction {
+      grid-template-columns: minmax(220px, 260px) minmax(520px, 1fr);
+    }
+
+    .verification-list {
+      display: grid;
+      gap: 8px;
+      max-height: 220px;
+      overflow: auto;
+    }
+
+    .verify-item {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+      background: var(--panel-soft);
+      font-size: 13px;
+    }
+
+    .verify-item.match {
+      border-color: #26734c;
+      color: var(--green);
+    }
+
+    .verify-item.mismatch {
+      border-color: #7a4b16;
+      color: var(--amber);
+    }
+
+    .verify-item.missing {
+      border-color: #7a2f2f;
+      color: var(--red);
+    }
+
+    @media (max-width: 900px) {
+      .toolbar,
+      .notice,
+      .summary,
+      .index-grid,
+      .index-context,
+      .facebook-grid,
+      .review {
+        grid-template-columns: 1fr;
+      }
+
+      .actions {
+        justify-content: flex-start;
+      }
+
+      main,
+      .app-header {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="app-header">
+    <h1>LuSE Daily Ingestion Dashboard</h1>
+    <p>Manual-first review desk for scraping, inspecting, and ingesting LuSE data.</p>
+  </header>
+
+  <main>
+    <section id="ingestStatus" class="ingest-status" aria-live="polite"></section>
+
+    <section class="module" aria-label="LuSE index data">
+      <div class="module-head">
+        <div>
+          <h2>Daily 1: LuSE Index Data</h2>
+          <p>Review the index summary before writing to the existing LuSE index collections.</p>
+        </div>
+        <div class="actions">
+          <button class="secondary" type="button" id="loadIndexBtn">Load Index Latest</button>
+          <button class="secondary" type="button" id="scrapeIndexBtn">Fetch Index Draft</button>
+          <button class="success" type="button" id="ingestIndexBtn">Ingest Index</button>
+        </div>
+      </div>
+
+      <div class="index-context">
+        <div>
+          <span>Firebase Index</span>
+          <strong id="indexLastValue">-</strong>
+        </div>
+        <div>
+          <span>Firebase Date</span>
+          <strong id="indexLastDate">-</strong>
+        </div>
+        <div>
+          <span>Draft Change</span>
+          <strong id="indexDraftChange">-</strong>
+        </div>
+      </div>
+
+      <div class="index-grid">
+        <div class="field">
+          <label for="indexCurrentValue">Current Value</label>
+          <input id="indexCurrentValue" type="number" step="0.01">
+        </div>
+        <div class="field">
+          <label for="indexPriceChange">Price Change</label>
+          <input id="indexPriceChange" type="number" step="0.01">
+        </div>
+        <div class="field">
+          <label for="indexPercentageChange">Percentage Change</label>
+          <input id="indexPercentageChange" type="number" step="0.01">
+        </div>
+        <div class="field">
+          <label for="indexTrades">Trades</label>
+          <input id="indexTrades" type="number" step="1">
+        </div>
+        <div class="field">
+          <label for="indexVolumeTraded">Volume Traded</label>
+          <input id="indexVolumeTraded" type="number" step="1">
+        </div>
+        <div class="field">
+          <label for="indexValueTraded">Value Traded</label>
+          <input id="indexValueTraded" type="number" step="0.01">
+        </div>
+      </div>
+    </section>
+
+    <section class="module" aria-label="LuSE company prices">
+      <div class="module-head">
+        <div>
+          <h2>Daily 2/3: Company Prices</h2>
+          <p>Scrape, inspect, manually correct, and ingest LuSE company prices.</p>
+        </div>
+        <div class="actions">
+          <button class="secondary" type="button" id="loadLatestBtn">Load Latest</button>
+          <button class="primary" type="button" id="checkDateBtn">Check LuSE Date</button>
+          <button class="secondary" type="button" id="scrapeBtn">Fetch Scrape Draft</button>
+          <button class="warning" type="button" id="clearBtn">Clear Draft</button>
+          <button class="success" type="button" id="ingestBtn">Approve & Ingest</button>
+        </div>
+      </div>
+
+      <section class="toolbar" aria-label="Company price controls">
+        <div class="field">
+          <label for="marketDate">Market Date</label>
+          <input id="marketDate" type="date">
+        </div>
+
+        <div class="field">
+          <label for="sourceMode">Source</label>
+          <select id="sourceMode">
+            <option value="manual">Manual entry</option>
+            <option value="latest">Loaded from latest Firestore values</option>
+            <option value="scraped">Assisted scrape draft</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="backfillMode">Date Mode</label>
+          <label class="check-row">
+            <input id="backfillMode" type="checkbox">
+            Manual backfill
+          </label>
+        </div>
+      </section>
+
+      <section class="notice" aria-label="LuSE company scrape status">
+        <div>
+          <span>LuSE Website Date</span>
+          <strong id="luseDate">Not checked</strong>
+        </div>
+        <div>
+          <span>Last Ingested Date</span>
+          <strong id="lastIngestedDate">Unknown</strong>
+        </div>
+        <div>
+          <span>Scrape Decision</span>
+          <strong id="scrapeDecision" class="hold">Check date first</strong>
+        </div>
+      </section>
+
+      <section class="facebook-grid" aria-label="Facebook movers verification">
+        <div class="field">
+          <label for="facebookMoversInput">Facebook Movers</label>
+          <textarea id="facebookMoversInput" placeholder="Paste movers here, e.g.&#10;ZNCO 7.88&#10;REIZUSD 0.10"></textarea>
+          <div class="actions" style="justify-content:flex-start; margin-top:8px;">
+            <button class="secondary" type="button" id="verifyFacebookBtn">Verify Facebook Movers</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Verification Results</label>
+          <div id="facebookVerificationResults" class="verification-list"></div>
+        </div>
+      </section>
+
+      <section class="summary" aria-label="Company review summary">
+        <div class="metric">
+          <span>Total Companies</span>
+          <strong id="totalCount">0</strong>
+        </div>
+        <div class="metric">
+          <span>Ready</span>
+          <strong id="readyCount">0</strong>
+        </div>
+        <div class="metric">
+          <span>Edited</span>
+          <strong id="editedCount">0</strong>
+        </div>
+        <div class="metric">
+          <span>Missing</span>
+          <strong id="missingCount">0</strong>
+        </div>
+        <div class="metric">
+          <span>Total Value</span>
+          <strong id="totalValue">0</strong>
+        </div>
+      </section>
+
+      <section class="facebook-grid manual-correction" aria-label="Manual company price correction">
+        <div class="field">
+          <label for="manualCompanySymbol">Manual Price Correction</label>
+          <select id="manualCompanySymbol"></select>
+        </div>
+
+        <div class="index-grid">
+          <div class="field">
+            <label for="manualPriceDate">Date</label>
+            <input id="manualPriceDate" type="date">
+          </div>
+          <div class="field">
+            <label for="manualPrice">Price</label>
+            <input id="manualPrice" type="number" step="0.0001">
+          </div>
+          <div class="field">
+            <label for="manualVolume">Volume</label>
+            <input id="manualVolume" type="number" step="1">
+          </div>
+          <div class="field">
+            <label for="manualValue">Value</label>
+            <input id="manualValue" type="number" step="0.01">
+          </div>
+          <div class="field">
+            <label>Status</label>
+            <input id="manualCorrectionStatus" type="text" readonly>
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <button class="success" type="button" id="manualCorrectionBtn">Apply Correction</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="table-wrap" aria-label="Company price entry">
+        <table>
+          <thead>
+            <tr>
+              <th>Company</th>
+              <th>Firebase Latest</th>
+              <th>New Price</th>
+              <th>Price Change</th>
+              <th>Volume</th>
+              <th>Value</th>
+              <th>Source</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="companyRows"></tbody>
+        </table>
+      </section>
+    </section>
+
+    <section class="module" aria-label="CEC Africa data">
+      <div class="module-head">
+        <div>
+          <h2>Daily 4: CEC Africa</h2>
+          <p>Review CECA from AfricanFinancials and sync its history against CECZ.</p>
+        </div>
+        <div class="actions">
+          <button class="secondary" type="button" id="loadCecaBtn">Load CECA Latest</button>
+          <button class="secondary" type="button" id="scrapeCecaBtn">Fetch CECA Draft</button>
+          <button class="success" type="button" id="ingestCecaBtn">Ingest CECA</button>
+        </div>
+      </div>
+
+      <div class="index-context">
+        <div>
+          <span>Firebase CECA</span>
+          <strong id="cecaLastPrice">-</strong>
+        </div>
+        <div>
+          <span>CECA Last History Date</span>
+          <strong id="cecaLastDate">-</strong>
+        </div>
+        <div>
+          <span>Next Sync Date</span>
+          <strong id="cecaNextDate">-</strong>
+        </div>
+      </div>
+
+      <div class="index-grid">
+        <div class="field">
+          <label for="cecaPrice">CECA Price</label>
+          <input id="cecaPrice" type="number" step="0.0001">
+        </div>
+        <div class="field">
+          <label for="cecaVolume">CECA Volume</label>
+          <input id="cecaVolume" type="number" step="1">
+        </div>
+        <div class="field">
+          <label for="cecaValue">CECA Value</label>
+          <input id="cecaValue" type="number" step="0.01">
+        </div>
+        <div class="field">
+          <label for="cecaSource">Source</label>
+          <input id="cecaSource" type="text" value="AfricanFinancials">
+        </div>
+        <div class="field">
+          <label>Price Change</label>
+          <input id="cecaChange" type="text" readonly>
+        </div>
+        <div class="field">
+          <label>Status</label>
+          <input id="cecaStatus" type="text" readonly>
+        </div>
+      </div>
+    </section>
+
+    <section class="module" aria-label="LuSE notifications">
+      <div class="module-head">
+        <div>
+          <h2>Daily 5: Notifications</h2>
+          <p>Preview LuSE movers before sending the daily FCM notification.</p>
+        </div>
+        <div class="actions">
+          <button class="secondary" type="button" id="previewNotificationBtn">Preview Notification</button>
+          <button class="success" type="button" id="sendNotificationBtn">Send Notification</button>
+        </div>
+      </div>
+
+      <div class="index-context">
+        <div>
+          <span>Report Date</span>
+          <strong id="notificationReportDate">-</strong>
+        </div>
+        <div>
+          <span>Movers</span>
+          <strong id="notificationMoverCount">0</strong>
+        </div>
+        <div>
+          <span>Status</span>
+          <strong id="notificationStatus">Preview first</strong>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="notificationTitle">Notification Title</label>
+        <input id="notificationTitle" type="text">
+      </div>
+
+      <div class="field">
+        <label for="notificationPreview">Notification Body</label>
+        <textarea id="notificationPreview"></textarea>
+      </div>
+    </section>
+
+    <section class="module" aria-label="Company analytics">
+      <div class="module-head">
+        <div>
+          <h2>Daily 6: Company Analytics</h2>
+          <p>Calculate 1-month, 3-month, 6-month, and 1-year percentage changes for each company from historical prices.</p>
+        </div>
+        <div class="actions">
+          <button class="success" type="button" id="runAnalyticsBtn">Run Analytics</button>
+        </div>
+      </div>
+
+      <div class="index-context">
+        <div>
+          <span>Status</span>
+          <strong id="analyticsStatus">Not run</strong>
+        </div>
+        <div>
+          <span>Processed Date</span>
+          <strong id="analyticsDate">-</strong>
+        </div>
+        <div>
+          <span>Companies Updated</span>
+          <strong id="analyticsCount">0</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="review">
+      <div class="panel">
+        <h2>Ingestion Targets</h2>
+        <ul>
+          <li>luse_listed_companies_data/{companyName}</li>
+          <li>luseCompanyHistoricPrices/{symbol}</li>
+          <li>system_meta/lusePortfolio</li>
+          <li>Analytics and notifications should run after ingestion.</li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <h2>Payload Preview</h2>
+        <pre id="payloadPreview">{}</pre>
+      </div>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

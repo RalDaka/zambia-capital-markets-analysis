@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BoZ T-Bill Operations Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f141b;
+      --panel: #151b23;
+      --panel-soft: #111820;
+      --ink: #e6edf3;
+      --muted: #9aa8b5;
+      --line: #2a3441;
+      --header: #0b1118;
+      --blue: #6ea8ff;
+      --green: #74d99f;
+      --amber: #f0b86a;
+      --red: #ff8b8b;
+      --danger: #d94a4a;
+      --danger-bg: #2a1212;
+      --warning: #e8a838;
+      --warning-bg: #1f1a0e;
+      --shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    .app-header {
+      background: var(--header);
+      border-bottom: 1px solid var(--line);
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .app-header h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .app-header .subtitle {
+      margin: 2px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .header-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .badge.green { background: #102219; color: var(--green); border: 1px solid #26734c; }
+    .badge.amber { background: var(--warning-bg); color: var(--warning); border: 1px solid #7a5f1a; }
+    .badge.red { background: var(--danger-bg); color: var(--red); border: 1px solid #7a2f2f; }
+    .badge.blue { background: #0a1a33; color: var(--blue); border: 1px solid #1f4a8a; }
+
+    main {
+      padding: 18px 24px 34px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    /* Overview Panel */
+    .overview-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 18px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .overview-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .overview-item .label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .overview-item .value {
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .overview-item .value.small {
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--muted);
+    }
+
+    .overview-divider {
+      width: 1px;
+      height: 36px;
+      background: var(--line);
+    }
+
+    /* Stage Cards */
+    .stage-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .stage-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px 18px;
+      transition: border-color 0.2s;
+    }
+
+    .stage-card.active {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 1px rgba(110, 168, 255, 0.15);
+    }
+
+    .stage-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .stage-card-header .stage-info h3 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .stage-card-header .stage-info .script-name {
+      font-size: 12px;
+      color: var(--muted);
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      margin: 2px 0 0;
+    }
+
+    .stage-card-header .stage-info .purpose {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 4px 0 0;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .status-badge .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .status-badge.not-started { background: #111820; color: var(--muted); border: 1px solid var(--line); }
+    .status-badge.not-started .dot { background: var(--muted); }
+    .status-badge.running { background: #0a1a33; color: var(--blue); border: 1px solid #1f4a8a; }
+    .status-badge.running .dot { background: var(--blue); animation: pulse 1s infinite; }
+    .status-badge.preview-ready { background: var(--warning-bg); color: var(--warning); border: 1px solid #7a5f1a; }
+    .status-badge.preview-ready .dot { background: var(--warning); }
+    .status-badge.completed { background: #102219; color: var(--green); border: 1px solid #26734c; }
+    .status-badge.completed .dot { background: var(--green); }
+    .status-badge.error { background: var(--danger-bg); color: var(--red); border: 1px solid #7a2f2f; }
+    .status-badge.error .dot { background: var(--red); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .stage-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    button {
+      min-height: 34px;
+      padding: 7px 14px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #111820;
+      color: var(--ink);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    button:hover:not(:disabled) {
+      background: #1a2330;
+      border-color: #3a4a5a;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    button.primary {
+      background: #1f5fbf;
+      color: #ffffff;
+      border-color: #1f5fbf;
+    }
+
+    button.primary:hover:not(:disabled) {
+      background: #2a6fd0;
+    }
+
+    button.danger {
+      background: var(--danger-bg);
+      color: var(--red);
+      border-color: #7a2f2f;
+    }
+
+    button.danger:hover:not(:disabled) {
+      background: #3a1a1a;
+    }
+
+    button.warning {
+      background: var(--warning-bg);
+      color: var(--warning);
+      border-color: #7a5f1a;
+    }
+
+    button.warning:hover:not(:disabled) {
+      background: #2a2410;
+    }
+
+    button.success {
+      background: #102219;
+      color: var(--green);
+      border-color: #26734c;
+    }
+
+    button.success:hover:not(:disabled) {
+      background: #1a3328;
+    }
+
+    button.btn-skip {
+      background: #1a2a1a;
+      color: var(--green);
+      border-color: #26734c;
+    }
+
+    button.btn-skip:hover:not(:disabled) {
+      background: #243a24;
+    }
+
+    /* Preview Panel */
+    .preview-panel {
+      display: none;
+      margin-top: 12px;
+      padding: 12px 14px;
+      background: var(--panel-soft);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font-size: 13px;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    .preview-panel.visible {
+      display: block;
+    }
+
+    .preview-panel pre {
+      margin: 0;
+      white-space: pre-wrap;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      color: var(--ink);
+      line-height: 1.5;
+    }
+
+    .preview-panel .preview-title {
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .preview-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin-top: 6px;
+    }
+
+    .preview-table th,
+    .preview-table td {
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+    }
+
+    .preview-table th {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+
+    /* Source selector buttons */
+    .source-selector {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .source-selector button {
+      flex: 1;
+    }
+
+    .source-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      margin-bottom: 8px;
+    }
+
+    .source-badge.web {
+      background: #0a1a33;
+      color: var(--blue);
+      border: 1px solid #1f4a8a;
+    }
+
+    .source-badge.firebase {
+      background: #1a2a10;
+      color: var(--green);
+      border: 1px solid #26734c;
+    }
+
+    /* Editable form fields */
+    .edit-field {
+      margin-bottom: 8px;
+    }
+
+    .edit-field label {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      margin-bottom: 3px;
+    }
+
+    .edit-field input,
+    .edit-field textarea {
+      width: 100%;
+      padding: 6px 8px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      color: var(--ink);
+      font-size: 13px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+
+    .edit-field input:focus,
+    .edit-field textarea:focus {
+      outline: none;
+      border-color: var(--blue);
+    }
+
+    .edit-field textarea {
+      min-height: 60px;
+      resize: vertical;
+    }
+
+    /* Editable yield table rows */
+    .yield-edit-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-bottom: 4px;
+      padding: 4px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .yield-edit-row input {
+      flex: 1;
+      padding: 4px 6px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      color: var(--ink);
+      font-size: 12px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      min-width: 0;
+    }
+
+    .yield-edit-row input:focus {
+      outline: none;
+      border-color: var(--blue);
+    }
+
+    .yield-edit-row .yield-field-label {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      min-width: 50px;
+      flex-shrink: 0;
+    }
+
+    .yield-edit-header {
+      display: flex;
+      gap: 6px;
+      padding: 4px 0;
+      margin-bottom: 4px;
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .yield-edit-header span {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .edit-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    /* Log Panel */
+    .log-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .log-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-soft);
+    }
+
+    .log-panel-header h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .log-panel-header .log-count {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .log-container {
+      padding: 8px 0;
+      max-height: 350px;
+      overflow-y: auto;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .log-entry {
+      display: flex;
+      gap: 10px;
+      padding: 2px 16px;
+    }
+
+    .log-entry .log-time {
+      color: var(--muted);
+      flex-shrink: 0;
+      min-width: 52px;
+    }
+
+    .log-entry .log-msg {
+      color: var(--ink);
+      word-break: break-word;
+    }
+
+    .log-entry .log-msg.info { color: var(--blue); }
+    .log-entry .log-msg.success { color: var(--green); }
+    .log-entry .log-msg.warn { color: var(--warning); }
+    .log-entry .log-msg.error { color: var(--red); }
+
+    .log-empty {
+      padding: 24px 16px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    /* Scrollbar */
+    .log-container::-webkit-scrollbar,
+    .preview-panel::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .log-container::-webkit-scrollbar-track,
+    .preview-panel::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .log-container::-webkit-scrollbar-thumb,
+    .preview-panel::-webkit-scrollbar-thumb {
+      background: var(--line);
+      border-radius: 3px;
+    }
+
+    @media (max-width: 768px) {
+      .app-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+      }
+
+      .overview-panel {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+      }
+
+      .overview-divider {
+        display: none;
+      }
+
+      .stage-card-header {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <h1>BoZ T-Bill Operations Dashboard</h1>
+      <div class="subtitle">Monthly T-Bill workflow — invitations, yields, historic sync, allocations, analysis</div>
+    </div>
+    <div class="header-badge">
+      <span class="badge green" id="modeBadge">Review First</span>
+      <span class="badge blue" id="statusBadge">Loading...</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Overview Panel -->
+    <section class="overview-panel" id="overviewPanel">
+      <div class="overview-item">
+        <span class="label">Dashboard</span>
+        <span class="value" id="dashboardStatus">localhost:3003</span>
+      </div>
+      <div class="overview-divider"></div>
+      <div class="overview-item">
+        <span class="label">Scripts</span>
+        <span class="value" id="scriptsStatus">— / 7 found</span>
+      </div>
+      <div class="overview-divider"></div>
+      <div class="overview-item">
+        <span class="label">Mode</span>
+        <span class="value" id="modeStatus">Review First</span>
+      </div>
+      <div class="overview-divider"></div>
+      <div class="overview-item">
+        <span class="label">Active Stage</span>
+        <span class="value" id="activeStageStatus">—</span>
+      </div>
+      <div class="overview-divider"></div>
+      <div class="overview-item" style="flex:1;">
+        <span class="label">Last Action</span>
+        <span class="value small" id="lastActionStatus">—</span>
+      </div>
+      <button type="button" id="refreshOverviewBtn" style="flex-shrink:0;">Refresh</button>
+    </section>
+
+    <!-- Stage Cards -->
+    <section class="stage-grid" id="stageGrid"></section>
+
+    <!-- Log Panel -->
+    <section class="log-panel">
+      <div class="log-panel-header">
+        <h3>Activity Log</h3>
+        <span class="log-count" id="logCount">0 entries</span>
+      </div>
+      <div class="log-container" id="logContainer">
+        <div class="log-empty">No activity yet. Run a stage to see logs.</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
