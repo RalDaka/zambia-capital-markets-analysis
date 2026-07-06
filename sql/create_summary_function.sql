@@ -43,3 +43,39 @@ AS $$
         max(index_date)::date as latest_date
     FROM public.luse_index;
 $$;
+
+-- 4. Create a function to get all historical prices (efficient server-side query)
+CREATE OR REPLACE FUNCTION public.get_luse_all_prices()
+RETURNS TABLE (
+    ticker text,
+    trade_date date,
+    price numeric,
+    volume bigint,
+    daily_return numeric
+)
+LANGUAGE sql
+AS $$
+    SELECT
+        ticker::text,
+        trade_date::date,
+        price::numeric,
+        volume::bigint,
+        daily_return::numeric
+    FROM public.luse_historical_prices
+    ORDER BY ticker, trade_date;
+$$;
+
+-- 5. Create a function to get all index data
+CREATE OR REPLACE FUNCTION public.get_luse_all_index()
+RETURNS TABLE (
+    index_date date,
+    luse_index numeric
+)
+LANGUAGE sql
+AS $$
+    SELECT
+        index_date::date,
+        luse_index::numeric
+    FROM public.luse_index
+    ORDER BY index_date;
+$$;

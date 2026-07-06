@@ -545,57 +545,45 @@ def get_distinct_tickers():
 
 @st.cache_data(ttl=300)
 def load_prices():
-    """Load prices from Supabase luse_historical_prices table (paginated to bypass 1,000-row limit)."""
-    PAGE_SIZE = 1000
-    all_data = []
-    start = 0
-    while True:
-        resp = supabase.table("luse_historical_prices").select("ticker,trade_date,price,volume,daily_return").order("ticker").order("trade_date").range(start, start + PAGE_SIZE - 1).execute()
-        batch = resp.data
-        if not batch:
-            break
-        all_data.extend(batch)
-        if len(batch) < PAGE_SIZE:
-            break
-        start += PAGE_SIZE
-    df = pd.DataFrame(all_data)
-    if len(df) == 0:
-        st.warning("No data found in Supabase 'luse_historical_prices' table. Please upload data first.")
+    """Load prices via SQL RPC (efficient server-side query, no pagination)."""
+    try:
+        resp = supabase.rpc("get_luse_all_prices").execute()
+        data = resp.data
+        if not data:
+            st.warning("No data found in Supabase 'luse_historical_prices' table. Please upload data first.")
+            return pd.DataFrame(columns=["ticker", "date", "price", "volume", "daily_return"])
+        df = pd.DataFrame(data)
+        df = df.rename(columns={"trade_date": "date"})
+        df["date"] = pd.to_datetime(df["date"])
+        df["price"] = pd.to_numeric(df["price"], errors="coerce")
+        df["volume"] = pd.to_numeric(df["volume"], errors="coerce").fillna(0)
+        df["daily_return"] = pd.to_numeric(df["daily_return"], errors="coerce")
+        df = df.sort_values(["ticker", "date"]).reset_index(drop=True)
+        return df
+    except Exception as e:
+        st.warning(f"Could not fetch prices via RPC: {e}")
         return pd.DataFrame(columns=["ticker", "date", "price", "volume", "daily_return"])
-    df = df.rename(columns={"trade_date": "date"})
-    df["date"] = pd.to_datetime(df["date"])
-    df["price"] = pd.to_numeric(df["price"], errors="coerce")
-    df["volume"] = pd.to_numeric(df["volume"], errors="coerce").fillna(0)
-    df["daily_return"] = pd.to_numeric(df["daily_return"], errors="coerce")
-    df = df.sort_values(["ticker", "date"]).reset_index(drop=True)
-    return df
 
 
 @st.cache_data(ttl=300)
 def load_index():
-    """Load index from Supabase luse_index table (paginated to bypass 1,000-row limit)."""
-    PAGE_SIZE = 1000
-    all_data = []
-    start = 0
-    while True:
-        resp = supabase.table("luse_index").select("index_date,luse_index").order("index_date").range(start, start + PAGE_SIZE - 1).execute()
-        batch = resp.data
-        if not batch:
-            break
-        all_data.extend(batch)
-        if len(batch) < PAGE_SIZE:
-            break
-        start += PAGE_SIZE
-    df = pd.DataFrame(all_data)
-    if len(df) == 0:
-        st.warning("No data found in Supabase 'luse_index' table. Please upload data first.")
+    """Load index via SQL RPC (efficient server-side query, no pagination)."""
+    try:
+        resp = supabase.rpc("get_luse_all_index").execute()
+        data = resp.data
+        if not data:
+            st.warning("No data found in Supabase 'luse_index' table. Please upload data first.")
+            return pd.DataFrame(columns=["date", "price", "ticker"])
+        df = pd.DataFrame(data)
+        df = df.rename(columns={"index_date": "date", "luse_index": "price"})
+        df["date"] = pd.to_datetime(df["date"])
+        df["price"] = pd.to_numeric(df["price"], errors="coerce")
+        df["ticker"] = "LuSE Index"
+        df = df.sort_values("date").reset_index(drop=True)
+        return df
+    except Exception as e:
+        st.warning(f"Could not fetch index via RPC: {e}")
         return pd.DataFrame(columns=["date", "price", "ticker"])
-    df = df.rename(columns={"index_date": "date", "luse_index": "price"})
-    df["date"] = pd.to_datetime(df["date"])
-    df["price"] = pd.to_numeric(df["price"], errors="coerce")
-    df["ticker"] = "LuSE Index"
-    df = df.sort_values("date").reset_index(drop=True)
-    return df
 
 
 prices = load_prices()
