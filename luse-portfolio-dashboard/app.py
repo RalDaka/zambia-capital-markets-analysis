@@ -515,7 +515,7 @@ st.markdown(
 )
 
 # ──────────────────────────────────────────────
-# DATA LOADING
+# DATA LOADING — using parameterized RPCs only (no full-table downloads)
 # ──────────────────────────────────────────────
 
 
@@ -544,13 +544,17 @@ def get_distinct_tickers():
 
 
 @st.cache_data(ttl=300)
-def load_prices():
-    """Load prices via SQL RPC (efficient server-side query, no pagination)."""
+def get_prices_by_ticker(ticker, start_date=None, end_date=None, limit=5000):
+    """Get prices for a single ticker with optional date range via parameterized RPC."""
     try:
-        resp = supabase.rpc("get_luse_all_prices").execute()
+        params = {"p_ticker": ticker, "p_limit": limit}
+        if start_date is not None:
+            params["p_start_date"] = start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else str(start_date)
+        if end_date is not None:
+            params["p_end_date"] = end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else str(end_date)
+        resp = supabase.rpc("get_luse_prices_by_ticker", params).execute()
         data = resp.data
         if not data:
-            st.warning("No data found in Supabase 'luse_historical_prices' table. Please upload data first.")
             return pd.DataFrame(columns=["ticker", "date", "price", "volume", "daily_return"])
         df = pd.DataFrame(data)
         df = df.rename(columns={"trade_date": "date"})
@@ -558,21 +562,51 @@ def load_prices():
         df["price"] = pd.to_numeric(df["price"], errors="coerce")
         df["volume"] = pd.to_numeric(df["volume"], errors="coerce").fillna(0)
         df["daily_return"] = pd.to_numeric(df["daily_return"], errors="coerce")
-        df = df.sort_values(["ticker", "date"]).reset_index(drop=True)
+        df = df.sort_values("date").reset_index(drop=True)
         return df
     except Exception as e:
-        st.warning(f"Could not fetch prices via RPC: {e}")
+        st.warning(f"Could not fetch prices for {ticker} via RPC: {e}")
         return pd.DataFrame(columns=["ticker", "date", "price", "volume", "daily_return"])
 
 
 @st.cache_data(ttl=300)
-def load_index():
-    """Load index via SQL RPC (efficient server-side query, no pagination)."""
+def get_ticker_summary(start_date=None, end_date=None):
+    """Get summary (start/end price, return %) for all tickers in a date range."""
     try:
-        resp = supabase.rpc("get_luse_all_index").execute()
+        params = {}
+        if start_date is not None:
+            params["p_start_date"] = start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else str(start_date)
+        if end_date is not None:
+            params["p_end_date"] = end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else str(end_date)
+        resp = supabase.rpc("get_luse_all_ticker_summary", params).execute()
         data = resp.data
         if not data:
-            st.warning("No data found in Supabase 'luse_index' table. Please upload data first.")
+            return pd.DataFrame(columns=["ticker", "start_date", "end_date", "start_price", "end_price", "return_pct", "observations"])
+        df = pd.DataFrame(data)
+        df["start_date"] = pd.to_datetime(df["start_date"])
+        df["end_date"] = pd.to_datetime(df["end_date"])
+        df["start_price"] = pd.to_numeric(df["start_price"], errors="coerce")
+        df["end_price"] = pd.to_numeric(df["end_price"], errors="coerce")
+        df["return_pct"] = pd.to_numeric(df["return_pct"], errors="coerce")
+        df["observations"] = pd.to_numeric(df["observations"], errors="coerce").fillna(0).astype(int)
+        return df
+    except Exception as e:
+        st.warning(f"Could not fetch ticker summary via RPC: {e}")
+        return pd.DataFrame(columns=["ticker", "start_date", "end_date", "start_price", "end_price", "return_pct", "observations"])
+
+
+@st.cache_data(ttl=300)
+def get_index_range(start_date=None, end_date=None, limit=5000):
+    """Get LuSE index data with optional date range via parameterized RPC."""
+    try:
+        params = {"p_limit": limit}
+        if start_date is not None:
+            params["p_start_date"] = start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else str(start_date)
+        if end_date is not None:
+            params["p_end_date"] = end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else str(end_date)
+        resp = supabase.rpc("get_luse_index_range", params).execute()
+        data = resp.data
+        if not data:
             return pd.DataFrame(columns=["date", "price", "ticker"])
         df = pd.DataFrame(data)
         df = df.rename(columns={"index_date": "date", "luse_index": "price"})
@@ -582,20 +616,55 @@ def load_index():
         df = df.sort_values("date").reset_index(drop=True)
         return df
     except Exception as e:
-        st.warning(f"Could not fetch index via RPC: {e}")
+        st.warning(f"Could not fetch index range via RPC: {e}")
         return pd.DataFrame(columns=["date", "price", "ticker"])
 
 
-prices = load_prices()
-index_df = load_index()
-
-# Try to get tickers from efficient RPC first, fall back to prices DataFrame
-rpc_tickers = get_distinct_tickers()
-if rpc_tickers:
-    tickers = rpc_tickers
-else:
-    tickers = sorted(prices["ticker"].unique())
+# Load summary and tickers (lightweight)
+summary = get_table_summary()
+tickers = get_distinct_tickers()
+if not tickers:
+    tickers = []
 ALL_TICKERS = ["LuSE Index"] + tickers
+
+# Load index for the full available range (lightweight — just dates and values)
+index_df = get_index_range()
+
+# Load a small sample of the most recent prices for the overview panel
+# (latest price date, 30-day volume)
+@st.cache_data(ttl=300)
+def get_overview_data():
+    """Get overview panel data without downloading full table."""
+    try:
+        # Get the latest date from summary
+        s = get_table_summary()
+        if not s:
+            return None, 0
+        latest = pd.Timestamp(s["latest_date"])
+        # Get prices for all tickers in the last 30 days
+        start_30d = latest - pd.Timedelta(days=30)
+        # Fetch a limited set of recent data for volume calculation
+        resp = (
+            supabase
+            .table("luse_historical_prices")
+            .select("ticker,trade_date,price,volume")
+            .gte("trade_date", start_30d.strftime("%Y-%m-%d"))
+            .lte("trade_date", latest.strftime("%Y-%m-%d"))
+            .limit(5000)
+            .execute()
+        )
+        if resp.data:
+            df = pd.DataFrame(resp.data)
+            df["trade_date"] = pd.to_datetime(df["trade_date"])
+            df["volume"] = pd.to_numeric(df["volume"], errors="coerce").fillna(0)
+            total_vol = df["volume"].sum()
+            return latest, total_vol
+        return latest, 0
+    except Exception as e:
+        st.warning(f"Could not fetch overview data: {e}")
+        return None, 0
+
+overview_latest_date, overview_volume_30d = get_overview_data()
 
 # ──────────────────────────────────────────────
 # HELPER FUNCTIONS
@@ -684,14 +753,18 @@ st.markdown(
 # ──────────────────────────────────────────────
 # OVERVIEW PANEL
 # ──────────────────────────────────────────────
-latest_price_date = prices["date"].max()
 latest_index_row = index_df[index_df["date"] == index_df["date"].max()]
 latest_index_val = (
     latest_index_row["price"].values[0] if len(latest_index_row) > 0 else None
 )
-total_volume_30d = prices[
-    prices["date"] >= prices["date"].max() - pd.Timedelta(days=30)
-]["volume"].sum()
+
+# Get data range from summary
+if summary:
+    data_range_start = pd.Timestamp(summary["earliest_date"])
+    data_range_end = pd.Timestamp(summary["latest_date"])
+else:
+    data_range_start = pd.Timestamp("2008-01-01")
+    data_range_end = pd.Timestamp.today()
 
 st.markdown(
     f"""
@@ -708,22 +781,23 @@ st.markdown(
     <div class="overview-divider"></div>
     <div class="overview-item">
         <span class="label">30-Day Volume</span>
-        <span class="value">{fmt_volume(total_volume_30d)}</span>
+        <span class="value">{fmt_volume(overview_volume_30d)}</span>
     </div>
     <div class="overview-divider"></div>
     <div class="overview-item">
         <span class="label">Data Range</span>
-        <span class="value small">{prices['date'].min().strftime('%b %Y')} — {prices['date'].max().strftime('%b %Y')}</span>
+        <span class="value small">{data_range_start.strftime('%b %Y')} — {data_range_end.strftime('%b %Y')}</span>
     </div>
     <div class="overview-divider"></div>
     <div class="overview-item">
         <span class="label">Latest Price Date</span>
-        <span class="value small">{latest_price_date.strftime('%d %b %Y')}</span>
+        <span class="value small">{overview_latest_date.strftime('%d %b %Y') if overview_latest_date else '—'}</span>
     </div>
 </div>
 """,
     unsafe_allow_html=True,
 )
+
 
 # ══════════════════════════════════════════════
 # SECTION 1: HISTORICAL PERFORMANCE
@@ -741,8 +815,13 @@ col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
 with col1:
     perf_company = st.selectbox("Select Asset", ALL_TICKERS, index=0, key="perf_company")
 with col2:
-    min_date = prices["date"].min().date()
-    max_date = prices["date"].max().date()
+    # Use summary for date range
+    if summary:
+        min_date = pd.Timestamp(summary["earliest_date"]).date()
+        max_date = pd.Timestamp(summary["latest_date"]).date()
+    else:
+        min_date = pd.Timestamp("2008-01-01").date()
+        max_date = pd.Timestamp.today().date()
     default_start = max_date - pd.Timedelta(days=365)
     start_dt = st.date_input(
         "Start Date",
@@ -760,7 +839,13 @@ with col3:
         key="perf_end",
     )
 with col4:
-    available_years_perf = sorted(prices["date"].dt.year.unique(), reverse=True)
+    # Get available years from summary
+    if summary:
+        start_yr = pd.Timestamp(summary["earliest_date"]).year
+        end_yr = pd.Timestamp(summary["latest_date"]).year
+        available_years_perf = list(range(end_yr, start_yr - 1, -1))
+    else:
+        available_years_perf = [pd.Timestamp.today().year]
     perf_year = st.selectbox(
         "Quick Year",
         ["Custom"] + [str(y) for y in available_years_perf],
@@ -777,57 +862,57 @@ if perf_year != "Custom":
     start_dt = pd.Timestamp(f"{yr}-01-01")
     end_dt = pd.Timestamp(f"{yr}-12-31")
 
-# Compute returns for all companies
-perf_results = []
-for t in tickers:
-    tp = prices[
-        (prices["ticker"] == t)
-        & (prices["date"] >= start_dt)
-        & (prices["date"] <= end_dt)
-    ]
-    if len(tp) < 2:
-        continue
-    sp, ep = get_price_range(tp["price"])
-    if sp is None:
-        continue
-    ret = (ep - sp) / sp * 100
-    perf_results.append(
-        {"Ticker": t, "Start Price": sp, "End Price": ep, "Change": round(ep - sp, 2), "Return %": round(ret, 2)}
+# Use get_ticker_summary for all-company ranking (efficient server-side)
+ticker_summary_df = get_ticker_summary(start_date=start_dt, end_date=end_dt)
+
+if not ticker_summary_df.empty:
+    perf_results = []
+    for _, row in ticker_summary_df.iterrows():
+        sp = row["start_price"]
+        ep = row["end_price"]
+        if pd.isna(sp) or pd.isna(ep):
+            continue
+        ret = (ep - sp) / sp * 100
+        perf_results.append({
+            "Ticker": row["ticker"],
+            "Start Price": sp,
+            "End Price": ep,
+            "Change": round(ep - sp, 2),
+            "Return %": round(ret, 2),
+        })
+    perf_df = (
+        pd.DataFrame(perf_results)
+        .sort_values("Return %", ascending=False)
+        .reset_index(drop=True)
     )
+    perf_df["Rank"] = range(1, len(perf_df) + 1)
+    perf_df = perf_df[["Rank", "Ticker", "Start Price", "End Price", "Change", "Return %"]]
+else:
+    perf_df = pd.DataFrame(columns=["Rank", "Ticker", "Start Price", "End Price", "Change", "Return %"])
 
-perf_df = (
-    pd.DataFrame(perf_results)
-    .sort_values("Return %", ascending=False)
-    .reset_index(drop=True)
-)
-perf_df["Rank"] = range(1, len(perf_df) + 1)
-perf_df = perf_df[["Rank", "Ticker", "Start Price", "End Price", "Change", "Return %"]]
-
-# LuSE Index return
-idx_perf = index_df[
-    (index_df["date"] >= start_dt) & (index_df["date"] <= end_dt)
-]
+# LuSE Index return — use get_index_range
+idx_perf = get_index_range(start_date=start_dt, end_date=end_dt)
 idx_ret = None
 if len(idx_perf) >= 2:
-    idx_sp, idx_ep = get_price_range(idx_perf["price"])
-    if idx_sp:
+    idx_sp = idx_perf["price"].iloc[0]
+    idx_ep = idx_perf["price"].iloc[-1]
+    if idx_sp and idx_sp > 0:
         idx_ret = (idx_ep - idx_sp) / idx_sp * 100
 
-# Selected company return
+# Selected company return — use get_prices_by_ticker
 sel_ret = None
 if perf_company == "LuSE Index":
     sel_ret = idx_ret
 else:
-    sp = prices[
-        (prices["ticker"] == perf_company)
-        & (prices["date"] >= start_dt)
-        & (prices["date"] <= end_dt)
-    ]
-    if len(sp) >= 2:
-        sel_start, sel_end = get_price_range(sp["price"])
-        sel_ret = (sel_end - sel_start) / sel_start * 100
+    sp_df = get_prices_by_ticker(perf_company, start_date=start_dt, end_date=end_dt)
+    if len(sp_df) >= 2:
+        sel_start = sp_df["price"].iloc[0]
+        sel_end = sp_df["price"].iloc[-1]
+        if sel_start and sel_start > 0:
+            sel_ret = (sel_end - sel_start) / sel_start * 100
 
 avg_ret = perf_df["Return %"].mean() if len(perf_df) > 0 else None
+
 
 # Summary cards
 mcol1, mcol2, mcol3, mcol4 = st.columns(4)
@@ -893,11 +978,7 @@ with chart_col:
                 )
             )
     else:
-        sp = prices[
-            (prices["ticker"] == perf_company)
-            & (prices["date"] >= start_dt)
-            & (prices["date"] <= end_dt)
-        ]
+        sp = get_prices_by_ticker(perf_company, start_date=start_dt, end_date=end_dt)
         if len(sp) > 0:
             base = sp["price"].iloc[0]
             sp = sp.copy()
@@ -911,6 +992,7 @@ with chart_col:
                     line=dict(color="#74d99f", width=2),
                 )
             )
+
         if len(idx_perf) > 0:
             idx_base = idx_perf["price"].iloc[0]
             idxp = idx_perf.copy()
@@ -1051,12 +1133,22 @@ hm_sel_col1, hm_sel_col2 = st.columns(2)
 with hm_sel_col1:
     hm_company = st.selectbox("Select Company", tickers, index=0, key="hm_company")
 with hm_sel_col2:
-    available_years_hm = sorted(prices["date"].dt.year.unique(), reverse=True)
+    # Get available years from summary
+    if summary:
+        start_yr = pd.Timestamp(summary["earliest_date"]).year
+        end_yr = pd.Timestamp(summary["latest_date"]).year
+        available_years_hm = list(range(end_yr, start_yr - 1, -1))
+    else:
+        available_years_hm = [pd.Timestamp.today().year]
     hm_year = st.selectbox("Select Year", available_years_hm, index=0, key="hm_year")
 
 # Compute all period returns for the selected company
-hm_data = prices[prices["ticker"] == hm_company].copy()
-hm_data = hm_data.set_index("date")
+hm_data = get_prices_by_ticker(hm_company)
+if not hm_data.empty:
+    hm_data = hm_data.set_index("date")
+else:
+    hm_data = pd.DataFrame()
+
 
 hm_data["year"] = hm_data.index.year
 annual_returns = {}
@@ -1264,38 +1356,44 @@ st.markdown(
 )
 
 # Year selector
-available_years = sorted(prices["date"].dt.year.unique(), reverse=True)
+if summary:
+    start_yr = pd.Timestamp(summary["earliest_date"]).year
+    end_yr = pd.Timestamp(summary["latest_date"]).year
+    available_years = list(range(end_yr, start_yr - 1, -1))
+else:
+    available_years = [pd.Timestamp.today().year]
 tornado_year = st.selectbox(
     "Select Year", available_years, index=0, key="tornado_year"
 )
 
-# Compute per-company for the selected year
+# Use get_ticker_summary for the selected year (efficient server-side)
+tornado_start = pd.Timestamp(f"{tornado_year}-01-01")
+tornado_end = pd.Timestamp(f"{tornado_year}-12-31")
+tornado_summary = get_ticker_summary(start_date=tornado_start, end_date=tornado_end)
+
 tornado_data = []
-for t in tickers:
-    tp = prices[
-        (prices["ticker"] == t)
-        & (prices["date"].dt.year == tornado_year)
-    ]
-    if len(tp) < 2:
-        continue
-    sp, ep = get_price_range(tp["price"])
-    if sp is None:
-        continue
-    kwacha_change = ep - sp
-    pct_return = (ep - sp) / sp * 100
-    tornado_data.append(
-        {
-            "Ticker": t,
-            "Start Price": sp,
-            "End Price": ep,
-            "Kwacha Change": round(kwacha_change, 2),
-            "Return %": round(pct_return, 2),
-        }
-    )
+if not tornado_summary.empty:
+    for _, row in tornado_summary.iterrows():
+        sp = row["start_price"]
+        ep = row["end_price"]
+        if pd.isna(sp) or pd.isna(ep):
+            continue
+        kwacha_change = ep - sp
+        pct_return = (ep - sp) / sp * 100
+        tornado_data.append(
+            {
+                "Ticker": row["ticker"],
+                "Start Price": sp,
+                "End Price": ep,
+                "Kwacha Change": round(kwacha_change, 2),
+                "Return %": round(pct_return, 2),
+            }
+        )
 
 tornado_df = pd.DataFrame(tornado_data).sort_values(
     "Kwacha Change", ascending=False
 ).reset_index(drop=True)
+
 
 if len(tornado_df) > 0:
     # Tornado chart: all bars radiate outward from center using abs() values
@@ -1523,17 +1621,19 @@ flow_year = st.selectbox(
 # Compute volume share and price movement share for Sankey
 flow_data = []
 for t in tickers:
-    tp = prices[
-        (prices["ticker"] == t)
-        & (prices["date"].dt.year == flow_year)
-    ]
+    tp = get_prices_by_ticker(
+        t,
+        start_date=pd.Timestamp(f"{flow_year}-01-01"),
+        end_date=pd.Timestamp(f"{flow_year}-12-31"),
+    )
     if len(tp) < 2:
         continue
     total_vol = tp["volume"].sum()
     if total_vol == 0 or pd.isna(total_vol):
         continue
-    sp, ep = get_price_range(tp["price"])
-    if sp is None:
+    sp = tp["price"].iloc[0]
+    ep = tp["price"].iloc[-1]
+    if pd.isna(sp) or sp == 0:
         continue
     kwacha_movement = ep - sp
     return_pct = (ep - sp) / sp * 100
@@ -1547,6 +1647,7 @@ for t in tickers:
             "Return %": round(return_pct, 2),
         }
     )
+
 
 flow_df = pd.DataFrame(flow_data)
 if len(flow_df) > 0:
@@ -1815,7 +1916,7 @@ st.markdown(
 # Compute coverage stats
 coverage_data = []
 for t in tickers:
-    tp = prices[prices["ticker"] == t].sort_values("date")
+    tp = get_prices_by_ticker(t)
     if len(tp) == 0:
         continue
     start = tp["date"].min()
@@ -1825,6 +1926,7 @@ for t in tickers:
     # Coverage quality: based on observation density
     expected_days = coverage_days
     density = obs / max(expected_days, 1) * 100 if expected_days > 0 else 0
+
     if density >= 60:
         quality = "Good"
         qclass = "good"
