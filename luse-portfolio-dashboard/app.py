@@ -957,7 +957,7 @@ with table_col:
             return "color: #ff8b8b"
         return ""
 
-    styled_df = display_df.style.applymap(color_change, subset=["Change"]).applymap(color_pct, subset=["Return %"])
+    styled_df = display_df.style.map(color_change, subset=["Change"]).map(color_pct, subset=["Return %"])
 
     st.markdown(
         '<div style="font-size:11px;color:#9aa8b5;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">All Companies by Return</div>',
